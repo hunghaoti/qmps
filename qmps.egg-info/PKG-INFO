@@ -1,4 +1,4 @@
-Metadata-Version: 1.0
+Metadata-Version: 2.1
 Name: qmps
 Version: 0.1
 Summary: mps on quantum computers
@@ -6,5 +6,8 @@ Home-page: https://github.com/fergusbarratt/quantum-matrix-product-states.git/
 Author: Fergus Barratt
 Author-email: fergus.barratt@kcl.ac.uk
 License: GPL
-Description: UNKNOWN
 Platform: UNKNOWN
+License-File: LICENSE
+
+UNKNOWN
+

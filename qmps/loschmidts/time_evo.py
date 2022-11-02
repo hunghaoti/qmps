@@ -110,7 +110,7 @@ def obj(p, A, WW):
     #                               cirq.H(qbs[1])
     #                               ])
     s = cirq.Simulator(dtype=np.complex128)
-    ff = np.sqrt(2*np.abs(s.simulate(C).final_state[0]))#/np.abs(s.simulate(normC).final_state[0])), np.sqrt(np.abs(x[0]))
+    ff = np.sqrt(2*np.abs(s.simulate(C).final_state_vector[0]))#/np.abs(s.simulate(normC).final_state_vector[0])), np.sqrt(np.abs(x[0]))
     #print(ff[0]-ff[1])
     #print(ff[0], ff[1])
     return -ff
