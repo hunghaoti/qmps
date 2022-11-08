@@ -110,33 +110,73 @@ def obj(p, A, WW):
     #                               cirq.H(qbs[1])
     #                               ])
     s = cirq.Simulator(dtype=np.complex128)
-    ff = np.sqrt(2*np.abs(s.simulate(C).final_state[0]))#/np.abs(s.simulate(normC).final_state[0])), np.sqrt(np.abs(x[0]))
+    ff = np.sqrt(2*np.abs(s.simulate(C).final_state_vector[0]))#/np.abs(s.simulate(normC).final_state[0])), np.sqrt(np.abs(x[0]))
     #print(ff[0]-ff[1])
     #print(ff[0], ff[1])
     return -ff
 
-g0, g1 = 1.5, 0.2
-A, es = find_ground_state(Hamiltonian({'ZZ':-1, 'X':g0}).to_matrix(), 2, tol=1e-2, noisy=True)
-print(es[-1])
+def obj_g(p_, H):
+    p, rs = p_[:15], p_[15:]
+    A = iMPS([unitary_to_tensor(cirq.unitary(gate(p)))]).left_canonicalise()
+    Ham = [H.to_matrix()]
+    return (A.energy(Ham))
+
+
+
+
+## main function
+g0, g1 = 1.0, 0.2
+D = 2 #virtual bond dimension
+H0 = Hamiltonian({'ZZ':-1.0, 'X':g0})
+H1 = Hamiltonian({'ZZ':-1.0, 'X':g1})
 lles = []
 eevs = []
 eers = []
 ps = [15]
 for N in tqdm(ps):
 
+    params = np.random.randn(N)
+
+    ## find ground state
+    # Currently, we have two methods to find the ground state, you can use 
+    #   parameter 'meth' to swicth the method you want to use.
+    meth = 'meth2'
+    print('find ground state method:', meth)
+    #   meth == 'meth1':
+    #       This is the oringinal method to find the ground state, first they
+    #       find the ground state iMPS, say |GS_tens>, then find the sequence
+    #       'params' which construct the iMPS, say |A(params)>, such that the
+    #       overlabe <GS_tens| I | A(params)> is maximum.
+    #   meth == 'meth2':
+    #       This is the method to find the sequence 'params' such that
+    #       <A(params)| H0 | A(parmas)> is minimum.
+    if(meth == 'meth1'):
+        # the function find_ground_state seems not stable, the result of 
+        #   the ground state enery is different every time.
+        A, es = find_ground_state(H0.to_matrix(), D, tol=1e-2, noisy=True)
+        #print('ground state energy:', es[-1])
+        print('ground state energy:', A.energy([H0.to_matrix()]))
+        res = minimize(obj, params, 
+                    (A[0], np.eye(4)), 
+                    method='Nelder-Mead',
+                    options={'disp':True})
+        params = res.x
+    elif(meth == 'meth2'):
+        res = minimize(obj_g, params, H0, options={'disp':True})
+        params = res.x
+        A = iMPS([unitary_to_tensor(cirq.unitary(gate(params)))]).left_canonicalise()
+        print('ground state energy:', A.energy([H0.to_matrix()]))
+    else:
+        raise ValueError('wrong method input to find the ground state.')
+    
+    #do time evolution with H1 from the ground state of H0
     T = np.linspace(0, 6, 300)
     dt = T[1]-T[0]
-    res = minimize(obj, np.random.randn(N), 
-                   (A[0], np.eye(4)), 
-                   method='Nelder-Mead',
-                   options={'disp':True})
-    params = res.x
-    
-    WW = expm(-1j*Hamiltonian({'ZZ':-1, 'X':g1}).to_matrix()*2*dt)
+    WW = expm(-1j*H1.to_matrix()*2*dt)
     ps = [params]
     ops = paulis(0.5)
-    evs = []
-    les = []
+    evs = [] #observables <Sx> <Sy> <Sz> depend on time
+    les = [] #loschmidt echo depend on time
     errs = [res.fun]
 
     for _ in tqdm(T):
@@ -148,6 +188,7 @@ for N in tqdm(ps):
         params = res.x
         errs.append(res.fun)
         ps.append(params)
+
     lles.append(les)
     eevs.append(evs)
     eers.append(errs)
