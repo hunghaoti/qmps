@@ -2,12 +2,23 @@ from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, Aer, exec
 from qiskit.providers.aer import QasmSimulator, StatevectorSimulator, UnitarySimulator
 from qiskit.quantum_info.operators import Operator
 import numpy as np
+import cirq
+from qmps.represent import FullStateTensor, Environment
 
 from xmps.iMPS import iMPS, Map 
 from xmps.spin import U4
+from xmps.spin import paulis
 
 from qmps.tools import unitary_to_tensor, environment_from_unitary, tensor_to_unitary, get_env_exact, get_env_exact_alternative
 from qmps.time_evolve_tools import merge, put_env_on_left_site, put_env_on_right_site
+from qmps.represent import ShallowFullStateTensor
+
+def gate(v, symbol='U'):
+    #return ShallowCNOTStateTensor(2, v)
+    #return ShallowQAOAStateTensor(2, v)
+    return ShallowFullStateTensor(2, v, symbol)
+    #return FullStateTensor(U4(v))
+
 
 def gate_to_operator(gate):
     """
@@ -168,41 +179,48 @@ def energy_cost_fun(params, H, gate):
     E = ψ.conj().T @ H @ ψ
     return E.real
 
-def time_evolve_sim_state(params, U, W):
+def time_evolve_sim_state(params, A, WW):
     """
     Circuit which returns the overlap between 2 MPS states, defined by the unitaries U_ = U4(params) & U = tensor_to_unitary(A). The full wavefunction is returns for debugging purposes.
     """
     
+    simulator = Aer.get_backend('statevector_simulator')
     circ = QuantumCircuit(6,6)
     
-    U_ = self.gate(params)
-    A = unitary_to_tensor(cirq.unitary(U))
-    A_ = unitary_to_tensor(cirq.unitary(U_))
-    
-    _, r = Map(A, A_).right_fixed_point()
-    
+    U_ = gate(params)
+    A_ = iMPS([unitary_to_tensor(cirq.unitary(U_))]).left_canonicalise()[0]
+    E = Map(np.tensordot(WW, merge(A, A), [1, 0]), merge(A_, A_))
+    x, r = E.right_fixed_point()
+    U = Operator(tensor_to_unitary(A))
+    U_ = Operator(tensor_to_unitary(A_))
+    W = Operator(WW)
     R = Operator(put_env_on_left_site(r))
     L = Operator(put_env_on_right_site(r.conj().T))
-    
+    target_u = cirq.inverse(U_)
+
     circ.h(3)
     circ.cx(3,4)
     circ.unitary(U, [3,2])
     circ.unitary(U, [2,1])
+    circ.unitary(W, [3,2])
     circ.unitary(L, [1,0])
     circ.unitary(R, [5,4])
-    circ.unitary(H, [3,2])
     circ.unitary(target_u, [2,1])
     circ.unitary(target_u, [3,2])
     circ.cx(3,4)
     circ.h(3)
+    # print(circ)
     
     result = execute(circ, simulator).result()
     ψ = result.get_statevector(circ)
+    #print(ψ)
     
     return ψ
 
-def time_evolve_cost_fun(params, U, W):
+def time_evolve_cost_fun(params, A, W):
     """
     objective funciton that takes the probabiltiy of the all-zeros state from the wavefunction returns by time_evolve_sim_state(). This value is multiplied by 2 for normalization purposes.
     """
-    return np.abs(time_evolve_sim_state(params, U, Operator(W))[0])*2
+    cost = -np.sqrt(2*np.abs(time_evolve_sim_state(params, A, W)[0]))
+    # print(cost)
+    return cost
