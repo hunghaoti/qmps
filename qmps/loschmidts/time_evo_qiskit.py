@@ -12,7 +12,7 @@ import cirq
 from qmps.tools import unitary_to_tensor, environment_from_unitary, tensor_to_unitary, get_env_exact, get_env_exact_alternative
 from qmps.time_evolve_tools import merge, put_env_on_left_site, put_env_on_right_site
 from qmps.ground_state import Hamiltonian
-from qmps.qiskit_qmps import time_evolve_cost_fun, param_unitary
+from qmps.qiskit_qmps import time_evolve_cost_fun, param_unitary, time_evolve_measure_cost_fun
 from qmps.represent import ShallowFullStateTensor
 
 from tqdm import tqdm
@@ -70,7 +70,7 @@ for N in tqdm(ps):
         A_ = iMPS([unitary_to_tensor(cirq.unitary(U))]).left_canonicalise()
         evs.append(A_.Es(ops))
         les.append(A_.overlap(A))
-        res = minimize(time_evolve_cost_fun, params, (A_[0], WW), options={'disp':True})
+        res = minimize(time_evolve_measure_cost_fun, params, (A_[0], WW), options={'disp':True})
 
         params = res.x
         errs.append(res.fun)
