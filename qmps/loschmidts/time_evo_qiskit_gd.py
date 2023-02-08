@@ -21,10 +21,26 @@ from scipy.linalg import null_space
 from scipy.optimize import minimize
 from scipy.linalg import expm
 
+#cost_func = time_evolve_cost_fun
 cost_func = time_evolve_measure_cost_fun
 
-def grad_descent(params, A, W, learn_rate, max_iter, tol = 1.0e-6):
+def grad_descent(params, A, W, learn_rate, max_iter, tol = 1.0e-4): #1.-e-6 for 2pi case
     def get_grad(params):
+        eps = 1.0e-3
+        para_num = len(params)
+        del_x = np.zeros(para_num)
+        for i in range(para_num):
+            p_m = list(params)
+            p_p = list(params)
+            p_m[i] = p_m[i] - eps
+            p_p[i] = p_p[i] + eps
+            f_minus = cost_func(p_m, A, W)
+            f_plus = cost_func(p_p, A, W)
+            del_x[i] = ((1.0/(2.0*eps)) * (f_plus - f_minus))
+        #print(del_x)
+        return del_x
+
+    def get_grad_2pi(params):
         para_num = len(params)
         del_x = np.zeros(para_num)
         for i in range(para_num):
@@ -37,6 +53,7 @@ def grad_descent(params, A, W, learn_rate, max_iter, tol = 1.0e-6):
             del_x[i] = (0.5 * (f_plus - f_minus))
         #print(del_x)
         return del_x
+
     start = params
     x = start
 
@@ -121,5 +138,5 @@ for N in tqdm(ps):
 ps = [15]
 for q, i in enumerate(ps):
     j = int((np.max(list(ps))-i)/2)
-    np.save('qiskit_meas_lles', -np.log(np.array(lles)).T[0][:, j])
+    np.save('qiskit_eps_meas_large_shots_lles', -np.log(np.array(lles)).T[0][:, j])
 
