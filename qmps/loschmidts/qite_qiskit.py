@@ -21,10 +21,10 @@ from scipy.linalg import null_space
 from scipy.optimize import minimize
 from scipy.linalg import expm
 
-data_path = '../../data/20230328/data/'
+data_path = '../../data/20230420/data/'
 
-cost_func = time_evolve_cost_fun
-#cost_func = time_evolve_measure_cost_fun
+#cost_func = time_evolve_cost_fun
+cost_func = time_evolve_measure_cost_fun
 def Hermit_gate(par):
     # par has a 10-elem 
     A_op = np.zeros(16)
@@ -263,7 +263,7 @@ for N in tqdm(ps):
         Aop = Hermit_gate(par_Aop)
         e_iA = expm(-1j*Aop*2*dt)
         res = minimize(cost_func, params, (A_[0], e_iA), 
-                options={'disp':True})
+                method = 'COBYLA', options={'disp':True})
         params = res.x
         #params = grad_descent(params, A_[0], WW, 0.1, 10000)
         #errs.append(res.fun)
