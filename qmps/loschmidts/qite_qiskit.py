@@ -23,8 +23,8 @@ from scipy.linalg import expm
 
 data_path = '../../data/20230420/data/'
 
-#cost_func = time_evolve_cost_fun
-cost_func = time_evolve_measure_cost_fun
+cost_func = time_evolve_cost_fun
+#cost_func = time_evolve_measure_cost_fun
 def Hermit_gate(par):
     # par has a 10-elem 
     A_op = np.zeros(16)
@@ -148,59 +148,58 @@ def Aop_cost_func(par_Aop, A, H, dt):
     cost = prob
     return cost
 
-def grad_descent(params, A, W, learn_rate, max_iter, tol = 1.0e-4): #1.-e-6 for 2pi case
-    def get_grad(params):
-        eps = 1.0e-3
-        para_num = len(params)
-        del_x = np.zeros(para_num)
-        for i in range(para_num):
-            p_m = list(params)
-            p_p = list(params)
-            p_m[i] = p_m[i] - eps
-            p_p[i] = p_p[i] + eps
-            f_minus = cost_func(p_m, A, W)
-            f_plus = cost_func(p_p, A, W)
-            del_x[i] = ((1.0/(2.0*eps)) * (f_plus - f_minus))
-        #print(del_x)
-        return del_x
+def TN_Measrue(par, par_prime, Op):
+    U  = gate(par)
+    Up = gate(par_prime)
+    A  = iMPS([unitary_to_tensor(cirq.unitary(U ))]).left_canonicalise()[0]
+    Ap = iMPS([unitary_to_tensor(cirq.unitary(Up))]).left_canonicalise()[0]
+    E = Map(np.tensordot(Op, merge(A, A), [1, 0]), merge(Ap, Ap))
+    x, r = E.right_fixed_point()
+    U  = Operator(tensor_to_unitary(A ))
+    Up = Operator(tensor_to_unitary(Ap))
+    R = Operator(put_env_on_left_site(r))
+    L = Operator(put_env_on_right_site(r.conj().T))
 
-    def get_grad_2pi(params):
-        para_num = len(params)
-        del_x = np.zeros(para_num)
-        for i in range(para_num):
-            p_m = list(params)
-            p_p = list(params)
-            p_m[i] = p_m[i] - 0.5 * np.pi
-            p_p[i] = p_p[i] + 0.5 * np.pi
-            f_minus = cost_func(p_m, A, W)
-            f_plus = cost_func(p_p, A, W)
-            del_x[i] = (0.5 * (f_plus - f_minus))
-        #print(del_x)
-        return del_x
+    Op = Op.reshape(2, 2, 2, 2)
+    Op = np.transpose(Op, (1, 0, 3, 2))
+    target_u = cirq.inverse(Up)
 
-    start = params
-    x = start
+    tens_U = U.data.reshape(2, 2, 2, 2)
+    tens_U = np.transpose(tens_U, (1, 0, 3, 2))
+    tens_R = R.data.reshape(2, 2, 2, 2)
+    tens_R = np.transpose(tens_R, (1, 0, 3, 2))
+    tens_L = L.data.reshape(2, 2, 2, 2)
+    tens_L = np.transpose(tens_L, (1, 0, 3, 2))
+    tens_Up = target_u.data.reshape(2, 2, 2, 2)
+    tens_Up = np.transpose(tens_Up, (1, 0, 3, 2))
+    tens_cx = CX_tens()
+    tens_h = h_tens()
 
-    for _ in range(max_iter):
-        diff = learn_rate * get_grad(x)
-        crit = np.linalg.norm(diff)
-        print('crit:', crit)
-        if crit < tol:
-            break
-        old_cost = cost_func(x, A, W)
-        x = x - diff
-        cost = cost_func(x, A, W)
-        print('step:', learn_rate)
-        if cost > old_cost:
-            x = x + diff
-            learn_rate = learn_rate * 0.5
-        print('iter:', _)
-        print(cost_func(x, A, W))
-    print("====")
-    return x
-    
+    tmp = i_ten()
+    dim = pow(2, 6)
+    vec_i = np.zeros(dim)
+    vec_i[0] = 1.0
+    vec_i = vec_i.reshape(2, 2, 2, 2, 2, 2)
+
+    tmp = np.einsum('abcdefghijkl,cm->abmdefghijkl', tmp, tens_h)
+    tmp = np.einsum('abcdefghijkl,bcmn->amndefghijkl', tmp, tens_cx)
+    tmp = np.einsum('abcdefghijkl,cdmn->abmnefghijkl', tmp, tens_Up)
+    tmp = np.einsum('abcdefghijkl,demn->abcmnfghijkl', tmp, tens_Up)
+    tmp = np.einsum('abcdefghijkl,abmn->mncdefghijkl', tmp, tens_R)
+    tmp = np.einsum('abcdefghijkl,efmn->abcdmnghijkl', tmp, tens_L)
+    tmp = np.einsum('abcdefghijkl,cdmn->abmnefghijkl', tmp, Op)
+    tmp = np.einsum('abcdefghijkl,demn->abcmnfghijkl', tmp, tens_U)
+    tmp = np.einsum('abcdefghijkl,cdmn->abmnefghijkl', tmp, tens_U)
+    tmp = np.einsum('abcdefghijkl,bcmn->amndefghijkl', tmp, tens_cx)
+    tmp = np.einsum('abcdefghijkl,cm->abmdefghijkl', tmp, tens_h)
+    tmp = np.einsum('abcdef,abcdefghijkl->ghijkl', vec_i, tmp)
+    #print('circ',tmp.reshape(8, 8))
+    val = 1.0 * tmp[0,0,0,0,0,0]
+    #print('val',val)
 
 
+    #np.einsum()
+    return val.real
 
 def gate(v, symbol='U'):
     #return ShallowCNOTStateTensor(2, v)
@@ -274,6 +273,7 @@ for N in tqdm(ps):
         res = minimize(cost_func, params, (A_[0], e_iA), 
                 method = 'COBYLA', options={'disp':True, 'tol':1.0e-3, 'catol':1.0e-3})
         params = res.x
+        
         #params = grad_descent(params, A_[0], WW, 0.1, 10000)
         #errs.append(res.fun)
         ps.append(params)
