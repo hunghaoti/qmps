@@ -219,7 +219,7 @@ g0, g1 = 1.0, 0.2
 D = 2 #virtual bond dimension
 N=15
 H0 = Hamiltonian({'ZZ':-1.0, 'X':g0})
-H1 = Hamiltonian({'ZZ':-1.0, 'X':g1})
+#H1 = Hamiltonian({'ZZ':-1.0, 'X':g1})
 np.random.seed(3)
 params =[1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.] #np.random.randn(N)
 #res = minimize(obj_g, params, H0, options={'disp':True})
@@ -227,14 +227,15 @@ params =[1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.] #np.random.
 A = iMPS([unitary_to_tensor(cirq.unitary(gate(params)))]).left_canonicalise()
 print('energy:', A.energy([H0.to_matrix()]))
 ps = [15]
-f_e = open(data_path + "es.txt", "w")
+f_e = open(data_path + "es_meas_tol-3_2.txt", "w")
+f_var = open(data_path + "var_meas_tol_-3_2.txt", "w")
 for N in tqdm(ps):
 
-    T = np.linspace(0, 10, 100)
+    T = np.linspace(0, 10, 50)
     dt = T[1]-T[0]
     U = gate(params)
 
-    WW = expm(-1j*H1.to_matrix()*2*dt)
+    #WW = expm(-1j*H1.to_matrix()*2*dt)
     ps = [params]
     ops = paulis(0.5)
     evs = []
@@ -251,10 +252,18 @@ for N in tqdm(ps):
         U = gate(params)
         A_ = iMPS([unitary_to_tensor(cirq.unitary(U))]).left_canonicalise()
         en_old = en
-        en = A_.energy([H0.to_matrix()])
+        H0_mat = H0.to_matrix()
+        HH_mat = H0_mat @ H0_mat
+        en = A_.energy([H0_mat])
+        ee = A_.energy([HH_mat])
+        var = ee - en*en
+        print('var', var)
+        
         print(' energy', en)
         f_e.write(str(en) + '\n')
         f_e.flush()
+        f_var.write(str(var) + '\n')
+        f_var.flush()
         evs.append(A_.Es(ops))
         les.append(A_.overlap(A))
         resA = minimize(Aop_cost_func, par_Aop, (A_[0], H0, dt), 
@@ -263,7 +272,7 @@ for N in tqdm(ps):
         Aop = Hermit_gate(par_Aop)
         e_iA = expm(-1j*Aop*2*dt)
         res = minimize(cost_func, params, (A_[0], e_iA), 
-                method = 'COBYLA', options={'disp':True})
+                method = 'COBYLA', options={'disp':True, 'tol':1.0e-3, 'catol':1.0e-3})
         params = res.x
         #params = grad_descent(params, A_[0], WW, 0.1, 10000)
         #errs.append(res.fun)
