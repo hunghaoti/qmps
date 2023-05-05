@@ -20,6 +20,8 @@ from tqdm import tqdm
 from scipy.linalg import null_space
 from scipy.optimize import minimize
 from scipy.linalg import expm
+from ncon import ncon
+from numpy import trace as tr
 
 data_path = '../../data/20230420/data/'
 
@@ -148,7 +150,7 @@ def Aop_cost_func(par_Aop, A, H, dt):
     cost = prob
     return cost
 
-def TN_Measrue(par, par_prime, Op):
+def TN_Measure(par, par_prime, Op):
     U  = gate(par)
     Up = gate(par_prime)
     A  = iMPS([unitary_to_tensor(cirq.unitary(U ))]).left_canonicalise()[0]
@@ -201,6 +203,22 @@ def TN_Measrue(par, par_prime, Op):
     #np.einsum()
     return val.real
 
+def MPS_Measure(par, par_prime, Op):
+    U  = gate(par)
+    Up = gate(par_prime)
+    A  = iMPS([unitary_to_tensor(cirq.unitary(U ))]).left_canonicalise()[0]
+    Ap = iMPS([unitary_to_tensor(cirq.unitary(Up))]).left_canonicalise()[0]
+    E = Map(A, Ap)
+    xr, r = E.right_fixed_point()
+    xl, l = E.left_fixed_point()
+    d, D = 2, 2
+    op = Op.reshape(d, d, d, d)
+    lAAHAAr = ncon([l] + [A, A] + [op] + [Ap.conj(), + Ap.conj()] + [r], 
+            [[1,2],[3,1,7],[5,7,9],[3,5,4,6],[4,2,8],[6,8,10],[9,10]])
+    lr = ncon([l,r], [[1,2],[1,2]])
+    res = lAAHAAr / lr
+    return res
+
 def gate(v, symbol='U'):
     #return ShallowCNOTStateTensor(2, v)
     #return ShallowQAOAStateTensor(2, v)
@@ -223,6 +241,7 @@ def main(sampler=None):
     #H1 = Hamiltonian({'ZZ':-1.0, 'X':g1})
     np.random.seed(3)
     params =[1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.] #np.random.randn(N)
+    params0 = params
     #res = minimize(obj_g, params, H0, options={'disp':True})
     #params = res.x
     A = iMPS([unitary_to_tensor(cirq.unitary(gate(params)))]).left_canonicalise()
@@ -273,6 +292,12 @@ def main(sampler=None):
             f_var.flush()
             evs.append(A_.Es(ops))
             les.append(A_.overlap(A))
+            print('over', A_.overlap(A))
+            I = np.zeros((4, 4))
+            I[0,0]=1.0
+            I[1,1]=1.0
+            I[2,2]=1.0
+            I[3,3]=1.0
             resA = minimize(Aop_cost_func, par_Aop, (A_[0], H0, dt), 
                     options={'disp':True})
             par_Aop = resA.x
