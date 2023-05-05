@@ -23,8 +23,8 @@ from scipy.linalg import expm
 
 data_path = '../../data/20230420/data/'
 
-cost_func = time_evolve_cost_fun
-#cost_func = time_evolve_measure_cost_fun
+#cost_func = time_evolve_cost_fun
+cost_func = time_evolve_measure_cost_fun
 def Hermit_gate(par):
     # par has a 10-elem 
     A_op = np.zeros(16)
@@ -213,69 +213,82 @@ def obj_g(p_, H):
     Ham = [H.to_matrix()]
     return (A.energy(Ham))
 
+
 ## main function
-g0, g1 = 1.0, 0.2
-D = 2 #virtual bond dimension
-N=15
-H0 = Hamiltonian({'ZZ':-1.0, 'X':g0})
-#H1 = Hamiltonian({'ZZ':-1.0, 'X':g1})
-np.random.seed(3)
-params =[1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.] #np.random.randn(N)
-#res = minimize(obj_g, params, H0, options={'disp':True})
-#params = res.x
-A = iMPS([unitary_to_tensor(cirq.unitary(gate(params)))]).left_canonicalise()
-print('energy:', A.energy([H0.to_matrix()]))
-ps = [15]
-f_e = open(data_path + "es_meas_tol-3_2.txt", "w")
-f_var = open(data_path + "var_meas_tol_-3_2.txt", "w")
-for N in tqdm(ps):
-
-    T = np.linspace(0, 10, 50)
-    dt = T[1]-T[0]
-    U = gate(params)
-
-    #WW = expm(-1j*H1.to_matrix()*2*dt)
-    ps = [params]
-    ops = paulis(0.5)
-    evs = []
-    les = []
-    np.random.seed(0)
-    par_Aop = np.random.randn(16)
-
-    #errs = [res.fun]
-    en_old = 100.0
-    en = 100.0
-
-    for _ in tqdm(T):
-        #U = param_unitary(params);
+def main(sampler=None):
+    g0, g1 = 1.0, 0.2
+    D = 2 #virtual bond dimension
+    N=15
+    H0 = Hamiltonian({'ZZ':-1.0, 'X':g0})
+    #H1 = Hamiltonian({'ZZ':-1.0, 'X':g1})
+    np.random.seed(3)
+    params =[1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.] #np.random.randn(N)
+    #res = minimize(obj_g, params, H0, options={'disp':True})
+    #params = res.x
+    A = iMPS([unitary_to_tensor(cirq.unitary(gate(params)))]).left_canonicalise()
+    print('energy:', A.energy([H0.to_matrix()]))
+    ps = [15]
+    f_e = open(data_path + "es_meas_tol-3_2.txt", "w")
+    f_var = open(data_path + "var_meas_tol_-3_2.txt", "w")
+    for N in tqdm(ps):
+    
+        T = np.linspace(0, 10-0.2, 50)
+        dt = T[1]-T[0]
+        print('dt', dt)
         U = gate(params)
-        A_ = iMPS([unitary_to_tensor(cirq.unitary(U))]).left_canonicalise()
-        en_old = en
-        H0_mat = H0.to_matrix()
-        HH_mat = H0_mat @ H0_mat
-        en = A_.energy([H0_mat])
-        ee = A_.energy([HH_mat])
-        var = ee - en*en
-        print('var', var)
-        
-        print(' energy', en)
-        f_e.write(str(en) + '\n')
-        f_e.flush()
-        f_var.write(str(var) + '\n')
-        f_var.flush()
-        evs.append(A_.Es(ops))
-        les.append(A_.overlap(A))
-        resA = minimize(Aop_cost_func, par_Aop, (A_[0], H0, dt), 
-                options={'disp':True})
-        par_Aop = resA.x
-        Aop = Hermit_gate(par_Aop)
-        e_iA = expm(-1j*Aop*2*dt)
-        res = minimize(cost_func, params, (A_[0], e_iA), 
-                method = 'COBYLA', options={'disp':True, 'tol':1.0e-3, 'catol':1.0e-3})
-        params = res.x
-        
-        #params = grad_descent(params, A_[0], WW, 0.1, 10000)
-        #errs.append(res.fun)
-        ps.append(params)
-    f_e.close()
+    
+        #WW = expm(-1j*H1.to_matrix()*2*dt)
+        ps = [params]
+        ops = paulis(0.5)
+        evs = []
+        les = []
+        np.random.seed(0)
+        par_Aop = np.random.randn(16)
+    
+        #errs = [res.fun]
+        en_old = 100.0
+        en = 100.0
+        cnt=0
+    
+        for _ in tqdm(T):
+            #U = param_unitary(params);
+            t=dt*cnt
+            f_pars = open(data_path + "/params/params_tau" + str(t), "w")
+            np.savetxt(f_pars, params)
+            f_pars.close()
+            U = gate(params)
+            A_ = iMPS([unitary_to_tensor(cirq.unitary(U))]).left_canonicalise()
+            en_old = en
+            H0_mat = H0.to_matrix()
+            HH_mat = H0_mat @ H0_mat
+            en = A_.energy([H0_mat])
+            ee = A_.energy([HH_mat])
+            var = ee - en*en
+            print('var', var)
+            
+            print(' energy', en)
+            f_e.write(str(en) + '\n')
+            f_e.flush()
+            f_var.write(str(var) + '\n')
+            f_var.flush()
+            evs.append(A_.Es(ops))
+            les.append(A_.overlap(A))
+            resA = minimize(Aop_cost_func, par_Aop, (A_[0], H0, dt), 
+                    options={'disp':True})
+            par_Aop = resA.x
+            Aop = Hermit_gate(par_Aop)
+            e_iA = expm(-1j*Aop*2*dt)
+            res = minimize(cost_func, params, (A_[0], e_iA, sampler), 
+                    method = 'COBYLA', options={'disp':True, 'tol':1.0e-3, 'catol':1.0e-3})
+            params = res.x
+            
+            #params = grad_descent(params, A_[0], WW, 0.1, 10000)
+            #errs.append(res.fun)
+            ps.append(params)
+            cnt = cnt + 1
+        f_e.close()
+        f_var.close()
+    
+if __name__ == "__main__":
+    main()
 

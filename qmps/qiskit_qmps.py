@@ -12,6 +12,8 @@ from xmps.spin import paulis
 from qmps.tools import unitary_to_tensor, environment_from_unitary, tensor_to_unitary, get_env_exact, get_env_exact_alternative
 from qmps.time_evolve_tools import merge, put_env_on_left_site, put_env_on_right_site
 from qmps.represent import ShallowFullStateTensor
+from qiskit.primitives import Estimator
+import os
 
 def gate(v, symbol='U'):
     #return ShallowCNOTStateTensor(2, v)
@@ -217,7 +219,7 @@ def time_evolve_sim_state(params, A, WW):
     
     return ψ
 
-def time_evolve_sim_sample(params, A, WW):
+def time_evolve_sim_sample(params, A, WW, sampler_give=None):
     """
     Circuit which returns the overlap between 2 MPS states, defined by the unitaries U_ = U4(params) & U = tensor_to_unitary(A). The full wavefunction is returns for debugging purposes.
     """
@@ -252,20 +254,20 @@ def time_evolve_sim_sample(params, A, WW):
     
     return ψ[0]
 
-def time_evolve_cost_fun(params, A, W):
+def time_evolve_cost_fun(params, A, W, sampler_give = None):
     """
     objective funciton that takes the probabiltiy of the all-zeros state from the wavefunction returns by time_evolve_sim_state(). This value is multiplied by 2 for normalization purposes.
     """
-    cost = -np.sqrt(2*np.abs(time_evolve_sim_sample(params, A, W)))
+    cost = -np.sqrt(2*np.abs(time_evolve_sim_sample(params, A, W, sampler_give)))
     # print(cost)
     return cost
 
-def time_evolve_sim_measure_sample(params, A, WW):
+def time_evolve_sim_measure_sample(params, A, WW, sampler_give = None):
     """
     Circuit which returns the overlap between 2 MPS states, defined by the unitaries U_ = U4(params) & U = tensor_to_unitary(A). The full wavefunction is returns for debugging purposes.
     """
     
-    simulator = Aer.get_backend('statevector_simulator')
+
     circ = QuantumCircuit(6)
     
     U_ = gate(params)
@@ -290,24 +292,76 @@ def time_evolve_sim_measure_sample(params, A, WW):
     circ.unitary(target_u, [3,2])
     circ.cx(3,4)
     circ.h(3)
-    #result = execute(circ, simulator).result()
-    #ψ = result.get_statevector(circ)
-    #print('state vector :', abs(ψ[0]))
+
+    circ.measure_all()
+    shot_num = 8192
 
     # measurement
-    shot_num = 8192
-    circ.measure_all()
-    result = execute(circ, simulator, shots = shot_num).result()
-    counts = result.get_counts(circ)['000000']
-    rate = np.sqrt(float(counts) / shot_num) # get amplitude
-    #print('experiment:   ', rate)
+    if not sampler_give:
+        simulator = Aer.get_backend('statevector_simulator')
+        result = execute(circ, simulator, shots = shot_num).result()
+        counts = result.get_counts(circ)['000000']
+        rate = np.sqrt(float(counts) / shot_num) # get amplitude
+        #ψ = result.get_statevector(circ)
+    else:
+        sampler = sampler_give
+        job = sampler.run(circ, shots = shot_num)
+        print(f">>> Job ID: {job.job_id()}")
+        print(f">>> Job Status: {job.status()}")
+        result = job.result()
+        rate = np.sqrt(result.quasi_dists[0][0]);
     
     return rate
 
-def time_evolve_measure_cost_fun(params, A, W):
+def time_evolve_measure_cost_fun(params, A, W, sampler_give = None):
     """
     objective funciton that takes the probabiltiy of the all-zeros state from the wavefunction returns by measurement methods.
     """
-    prob = time_evolve_sim_measure_sample(params, A, W)
+    prob = time_evolve_sim_measure_sample(params, A, W, sampler_give)
     cost = -np.sqrt(2*prob)
+    return cost
+
+def time_evolve_sim_DN_sample(params, A, WW, N):
+    # N is op number
+    simulator = Aer.get_backend('statevector_simulator')
+    circ = QuantumCircuit(2 * N + 4)
+    
+    U_ = gate(params)
+    A_ = iMPS([unitary_to_tensor(cirq.unitary(U_))]).left_canonicalise()[0]
+    E = Map(np.tensordot(WW, merge(A, A), [1, 0]), merge(A_, A_))
+    x, r = E.right_fixed_point()
+    U = Operator(tensor_to_unitary(A))
+    U_ = Operator(tensor_to_unitary(A_))
+    W = Operator(WW)
+    R = Operator(put_env_on_left_site(r))
+    L = Operator(put_env_on_right_site(r.conj().T))
+    target_u = cirq.inverse(U_)
+
+    idx_n = 1 + 2 * N
+    circ.h(idx_n)
+    circ.cx(idx_n, idx_n + 1)
+
+    for i in range(idx_n, 1, -1):
+        circ.unitary(U, [i, i-1])
+
+    for i in range(1, N+1):
+        circ.unitary(W, [i*2 + 1, i*2])
+
+    circ.unitary(L, [1,0])
+    circ.unitary(R, [idx_n + 2, idx_n + 1])
+
+    for i in range(1, idx_n):
+        circ.unitary(target_u, [i + 1, i])
+
+    circ.cx(idx_n, idx_n + 1)
+    circ.h(idx_n)
+
+    result = execute(circ, simulator).result()
+    ψ = result.get_statevector(circ)
+    
+    return ψ[0]
+
+def time_evolve_DN_cost_fun(params, A, W, N):
+    cost = -np.sqrt(2*np.abs(time_evolve_sim_DN_sample(params, A, W, N)))
+    # print(cost)
     return cost
