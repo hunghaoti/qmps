@@ -1,0 +1,5 @@
+device_name:ibmq_qasm_simulator
+data_path:../data
+
+dt:0.2
+termi_t:10.0
