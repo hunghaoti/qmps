@@ -23,10 +23,12 @@ from scipy.linalg import expm
 from ncon import ncon
 from numpy import trace as tr
 
-data_path = '../../data/20230420/data/'
+#data_path = '../../data/20230420/data/'
+#data_path = '../../data/20230506/real_device_nairobi/data/'
+data_path = '../../data/20230607/dat_par_all_zero/'
 
-#cost_func = time_evolve_cost_fun
-cost_func = time_evolve_measure_cost_fun
+cost_func = time_evolve_cost_fun
+#cost_func = time_evolve_measure_cost_fun
 def Hermit_gate(par):
     # par has a 10-elem 
     A_op = np.zeros(16)
@@ -240,18 +242,26 @@ def main(sampler=None):
     H0 = Hamiltonian({'ZZ':-1.0, 'X':g0})
     #H1 = Hamiltonian({'ZZ':-1.0, 'X':g1})
     np.random.seed(3)
-    params =[1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.] #np.random.randn(N)
+    eps=2.0e-3
+    params =[] 
+    for i in range(0, 15):
+        params.append(eps)
+    #np.random.randn(N)
     params0 = params
     #res = minimize(obj_g, params, H0, options={'disp':True})
     #params = res.x
+    tmp = unitary_to_tensor(cirq.unitary(gate(params)))
+    print(tmp)
     A = iMPS([unitary_to_tensor(cirq.unitary(gate(params)))]).left_canonicalise()
     print('energy:', A.energy([H0.to_matrix()]))
     ps = [15]
-    f_e = open(data_path + "es_meas_tol-3_2.txt", "w")
-    f_var = open(data_path + "var_meas_tol_-3_2.txt", "w")
+    f_e = open(data_path + "es.txt", "w")
+    f_var = open(data_path + "var.txt", "w")
+    f_Aerr = open(data_path + "A_err.txt", "w")
     for N in tqdm(ps):
     
-        T = np.linspace(0, 10-0.2, 50)
+        dt = 0.2
+        T = np.linspace(0, 10-dt, int(10/dt))
         dt = T[1]-T[0]
         print('dt', dt)
         U = gate(params)
@@ -272,7 +282,8 @@ def main(sampler=None):
         for _ in tqdm(T):
             #U = param_unitary(params);
             t=dt*cnt
-            f_pars = open(data_path + "/params/params_tau" + str(t), "w")
+            t_str=str(round(t, 2))
+            f_pars = open(data_path + "params/params_tau" + t_str, "w")
             np.savetxt(f_pars, params)
             f_pars.close()
             U = gate(params)
@@ -292,7 +303,6 @@ def main(sampler=None):
             f_var.flush()
             evs.append(A_.Es(ops))
             les.append(A_.overlap(A))
-            print('over', A_.overlap(A))
             I = np.zeros((4, 4))
             I[0,0]=1.0
             I[1,1]=1.0
@@ -301,6 +311,18 @@ def main(sampler=None):
             resA = minimize(Aop_cost_func, par_Aop, (A_[0], H0, dt), 
                     options={'disp':True})
             par_Aop = resA.x
+            f_A_pars = open(data_path + "A_params/params_tau" + t_str, "w")
+            np.savetxt(f_A_pars, par_Aop)
+            f_A_pars.close()
+            
+            #A error 
+            e_H = expm(-1*H0_mat*4.0*dt)
+            Norm = TN_Measure(params, params, e_H)
+            A_err = 2.0 +  (1.0 / np.sqrt(Norm)) * Aop_cost_func(par_Aop, A_[0], H0, dt)
+            f_Aerr.write(str(A_err) + '\n')
+            f_Aerr.flush()
+
+            #A operate on circuit
             Aop = Hermit_gate(par_Aop)
             e_iA = expm(-1j*Aop*2*dt)
             res = minimize(cost_func, params, (A_[0], e_iA, sampler), 
