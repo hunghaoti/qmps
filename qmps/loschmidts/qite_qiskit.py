@@ -2,6 +2,7 @@ from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, Aer, exec
 from qiskit.providers.aer import QasmSimulator, StatevectorSimulator, UnitarySimulator
 from qiskit.quantum_info.operators import Operator
 import numpy as np
+import os
 
 from xmps.iMPS import iMPS, Map 
 from xmps.spin import U4
@@ -23,9 +24,7 @@ from scipy.linalg import expm
 from ncon import ncon
 from numpy import trace as tr
 
-#data_path = '../../data/20230420/data/'
-#data_path = '../../data/20230506/real_device_nairobi/data/'
-data_path = '../../data/20230607/dat_par_all_zero/'
+data_path = '../../data/20230607/data/'
 
 cost_func = time_evolve_cost_fun
 #cost_func = time_evolve_measure_cost_fun
@@ -233,6 +232,13 @@ def obj_g(p_, H):
     Ham = [H.to_matrix()]
     return (A.energy(Ham))
 
+def obj_s(p_):
+    p = p_[:15]
+    A = iMPS([unitary_to_tensor(cirq.unitary(gate(p)))]).left_canonicalise()
+    A = A.left_canonicalise()
+    return -(A.entropy())
+
+
 
 ## main function
 def main(sampler=None):
@@ -242,20 +248,22 @@ def main(sampler=None):
     H0 = Hamiltonian({'ZZ':-1.0, 'X':g0})
     #H1 = Hamiltonian({'ZZ':-1.0, 'X':g1})
     np.random.seed(3)
-    eps=2.0e-3
     params =[] 
     for i in range(0, 15):
-        params.append(eps)
+        params.append(1.0)
     #np.random.randn(N)
+    res = minimize(obj_s, params, options={'disp':True})
+    params = res.x
     params0 = params
-    #res = minimize(obj_g, params, H0, options={'disp':True})
-    #params = res.x
     tmp = unitary_to_tensor(cirq.unitary(gate(params)))
-    print(tmp)
     A = iMPS([unitary_to_tensor(cirq.unitary(gate(params)))]).left_canonicalise()
     print('energy:', A.energy([H0.to_matrix()]))
     ps = [15]
+    if not os.path.exists(data_path):
+        os.makedirs(data_path + 'params')
+        os.makedirs(data_path + 'A_params')
     f_e = open(data_path + "es.txt", "w")
+    f_s = open(data_path + "s.txt", "w")
     f_var = open(data_path + "var.txt", "w")
     f_Aerr = open(data_path + "A_err.txt", "w")
     for N in tqdm(ps):
@@ -293,21 +301,20 @@ def main(sampler=None):
             HH_mat = H0_mat @ H0_mat
             en = A_.energy([H0_mat])
             ee = A_.energy([HH_mat])
+            s = A_.entropy()
             var = ee - en*en
             print('var', var)
             
             print(' energy', en)
+            print(' entropy', s)
             f_e.write(str(en) + '\n')
             f_e.flush()
+            f_s.write(str(s) + '\n')
+            f_s.flush()
             f_var.write(str(var) + '\n')
             f_var.flush()
             evs.append(A_.Es(ops))
             les.append(A_.overlap(A))
-            I = np.zeros((4, 4))
-            I[0,0]=1.0
-            I[1,1]=1.0
-            I[2,2]=1.0
-            I[3,3]=1.0
             resA = minimize(Aop_cost_func, par_Aop, (A_[0], H0, dt), 
                     options={'disp':True})
             par_Aop = resA.x
@@ -334,6 +341,7 @@ def main(sampler=None):
             ps.append(params)
             cnt = cnt + 1
         f_e.close()
+        f_s.close()
         f_var.close()
     
 if __name__ == "__main__":
