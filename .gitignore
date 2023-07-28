@@ -6,9 +6,21 @@ idmrg.py*
 *.swm
 *.npy
 
+## this project
+log/
+data/
 old/
 notes/
+**/src/config.ini
 
+## python
 __pycache__/
 .ipynb_checkpoints/
+*.egg-info/
+
+## pyenv
+.python-version
+
+## python venv
+.venv/
 
