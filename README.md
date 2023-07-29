@@ -1,11 +1,14 @@
 # Representing, optimizing and evolving matrix product states on NISQ devices
 
 ## Installation
-Clone this somewhere. Run the commands below from this folder.
+
+1. Clone this somewhere.
+2. Install [poetry](https://python-poetry.org/docs/#installation)
+3. Run the commands below from this folder.
 
 ```
+poetry install
 pip install -e .
-pip install --use-pep517 git+https://github.com/fergusbarratt/xmps.git@master
 ```
 
 ## Prepare

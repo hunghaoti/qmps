@@ -24,3 +24,5 @@ __pycache__/
 ## python venv
 .venv/
 
+## poetry
+poetry.lock
