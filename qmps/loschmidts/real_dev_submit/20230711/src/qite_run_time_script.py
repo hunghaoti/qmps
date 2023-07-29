@@ -1,21 +1,11 @@
-import sys
-from qiskit_ibm_runtime import QiskitRuntimeService, Session, Sampler, Estimator, Options
+import configparser
+from pathlib import Path
 
-#sys.path.insert(0, "..")  # Add source_program directory to the path
+from qiskit_ibm_runtime import QiskitRuntimeService
 
-import qite_qiskit
-from qiskit import Aer
-from qiskit_ibm_runtime import RuntimeEncoder, RuntimeDecoder
-from qiskit_ibm_runtime.program import UserMessenger
+config = configparser.ConfigParser()
+config.read(Path(__file__).parent / 'config.ini')
 
-
-inputs = {"iterations": 3}
-options = Options()
-options.optimization_level = 2
-
-
-service = QiskitRuntimeService()
-with Session(service=service, backend="ibmq_qasm_simulator") as session:
-    sampler = Sampler(session=session, options=options)
-    qite_qiskit.main(sampler)
-    session.close()
+# Save an IBM Quantum account.
+QiskitRuntimeService.save_account(channel='ibm_quantum',
+                                  token=config['secret']['ibm_token'])
