@@ -6,6 +6,9 @@ idmrg.py*
 *.swm
 *.npy
 
+## vscode
+.ropeproject/
+
 ## this project
 log/
 data/
