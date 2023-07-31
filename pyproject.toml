@@ -1,0 +1,14 @@
+[tool.poetry]
+name = "qmps-for-fujitsu"
+version = "0.0.1"
+description = ""
+authors = []
+
+[tool.poetry.dependencies]
+python = "~3.10.11"
+qiskit = "~0.37.0"
+qiskit_ibm_runtime = "~0.6.2"
+cirq = "^1.2.0"
+ncon = "^2.0.0"
+xmps = { git = "https://github.com/fergusbarratt/xmps.git", branch = "master" }
+# qmps = { path = ".", develop = true }

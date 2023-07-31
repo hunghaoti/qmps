@@ -3,6 +3,8 @@ from qiskit.providers.aer import QasmSimulator, StatevectorSimulator, UnitarySim
 from qiskit.quantum_info.operators import Operator
 import numpy as np
 import os
+from configparser import ConfigParser
+from pathlib import Path
 
 from xmps.iMPS import iMPS, Map 
 from xmps.spin import U4
@@ -24,7 +26,6 @@ from scipy.linalg import expm
 from ncon import ncon
 from numpy import trace as tr
 
-data_path = '../data/data1/'
 
 #cost_func = time_evolve_cost_fun
 cost_func = time_evolve_measure_cost_fun
@@ -242,29 +243,45 @@ def obj_s(p_):
 
 ## main function
 def main(sampler=None):
+    base_folder = Path(__file__).parent
+
+    config_path = base_folder / 'config.ini'
+    config = ConfigParser()
+    config.read(config_path)
+
+    data_base_folder = base_folder / config['path']['data_path']
+    previous_data_index = int(config["runtime_state"]["data_index"])
+    data_input_folder = data_base_folder / f'data{previous_data_index}'
+    data_output_folder = data_base_folder / f'data{previous_data_index + 1}'
+    config['runtime_state']['data_index'] = str(previous_data_index + 1)
+    with open(config_path, 'w') as configfile:
+        config.write(configfile)
+
+    os.makedirs(data_output_folder / 'params', exist_ok=True)
+    os.makedirs(data_output_folder / 'A_params', exist_ok=True)
+
+
     g0, g1 = 1.0, 0.2
     D = 2 #virtual bond dimension
     N=15
     H0 = Hamiltonian({'ZZ':-1.0, 'X':g0})
     #H1 = Hamiltonian({'ZZ':-1.0, 'X':g1})
     np.random.seed(3)
-    dt=0.2
-    cnt=0
-    params =[1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.]
-    #params = np.loadtxt('../data/data0/params/params_tau' + str(cnt*dt))
+    dt=float(config['parameter']['dt'])
+    cnt=int(config['runtime_state']['loop_index'])
+    if cnt == 0: # the first run
+        params =[1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.]
+    else:
+        params = np.loadtxt(data_input_folder / 'params' / f'params_tau{round(cnt*dt, 2)}')
+
     #np.random.randn(N)
-    termi_t = 9.8
+    termi_t = float(config['parameter']['terminate_time'])
     tmp = unitary_to_tensor(cirq.unitary(gate(params)))
     A = iMPS([unitary_to_tensor(cirq.unitary(gate(params)))]).left_canonicalise()
     print('energy:', A.energy([H0.to_matrix()]))
     ps = [15]
-    if not os.path.exists(data_path):
-        os.makedirs(data_path + 'params')
-    os.makedirs(data_path + 'A_params')
-    f_e = open(data_path + "es.txt", "w")
-    f_s = open(data_path + "s.txt", "w")
-    f_var = open(data_path + "var.txt", "w")
-    f_Aerr = open(data_path + "A_err.txt", "w")
+
+
     for N in tqdm(ps):
     
         T = np.linspace(0, termi_t - dt, int(termi_t/dt - 0.0001))
@@ -286,16 +303,14 @@ def main(sampler=None):
     
         for _ in tqdm(T):
             #save current stage
-            f_cur_stage_cnt = open('cur_stage/cnt.txt', "w")
-            f_cur_stage_cnt.write(str(cnt))
-            f_cur_stage_cnt.close()
+            with open(config_path, "w") as configfile:
+                config.write(configfile)
 
             #U = param_unitary(params);
             t=dt*cnt
             t_str=str(round(t, 2))
-            f_pars = open(data_path + "params/params_tau" + t_str, "w")
-            np.savetxt(f_pars, params)
-            f_pars.close()
+            with open(data_output_folder / "params" / f"params_tau{t_str}", "w") as f_pars:
+                np.savetxt(f_pars, params)
             U = gate(params)
             A_ = iMPS([unitary_to_tensor(cirq.unitary(U))]).left_canonicalise()
             en_old = en
@@ -303,33 +318,36 @@ def main(sampler=None):
             HH_mat = H0_mat @ H0_mat
             en = A_.energy([H0_mat])
             ee = A_.energy([HH_mat])
-            s = A_.entropy()
+            # s = A_.entropy()
             var = ee - en*en
             print('var', var)
             
             print(' energy', en)
-            print(' entropy', s)
-            f_e.write(str(en) + '\n')
-            f_e.flush()
-            f_s.write(str(s) + '\n')
-            f_s.flush()
-            f_var.write(str(var) + '\n')
-            f_var.flush()
+            # print(' entropy', s)
+
+            with (open(data_output_folder / "es.txt", "a") as f_e,
+                  open(data_output_folder / "s.txt", "a") as f_s,
+                  open(data_output_folder / "var.txt", "a") as f_var
+                ):
+                f_e.write(f'{en}\n')
+                # f_s.write(f'{s}\n')
+                f_var.write(f'{var}\n')
+
             evs.append(A_.Es(ops))
             les.append(A_.overlap(A))
             resA = minimize(Aop_cost_func, par_Aop, (A_[0], H0, dt), 
                     options={'disp':True})
             par_Aop = resA.x
-            f_A_pars = open(data_path + "A_params/params_tau" + t_str, "w")
-            np.savetxt(f_A_pars, par_Aop)
-            f_A_pars.close()
+            with  open(data_output_folder / 'A_params' / f'params_tau{t_str}', 'w') as f_A_pars:
+                np.savetxt(f_A_pars, par_Aop)
             
             #A error 
             e_H = expm(-1*H0_mat*4.0*dt)
             Norm = TN_Measure(params, params, e_H)
             A_err = 2.0 +  (1.0 / np.sqrt(Norm)) * Aop_cost_func(par_Aop, A_[0], H0, dt)
-            f_Aerr.write(str(A_err) + '\n')
-            f_Aerr.flush()
+           
+            with open(data_output_folder / "A_err.txt", "w") as f_Aerr:
+                f_Aerr.write(f'{A_err}\n')
 
             #A operate on circuit
             Aop = Hermit_gate(par_Aop)
@@ -342,10 +360,8 @@ def main(sampler=None):
             #errs.append(res.fun)
             ps.append(params)
             cnt = cnt + 1
-        f_e.close()
-        f_s.close()
-        f_var.close()
+            config['runtime_state']['loop_index'] = str(cnt)
     
+
 if __name__ == "__main__":
     main()
-
