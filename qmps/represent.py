@@ -35,7 +35,7 @@ def get_env(U, C0=randn(2, 2)+1j*randn(2, 2), sample=False, reps=100000):
         """f_obj: take an 8d real vector, use mat to turn it into a 4d complex vector, environment_to_unitary to 
            turn it into a unitary, then calculate the objective function.
         """
-        r = full_tomography_env_objective_function(FullStateTensor(U), 
+        r = full_tomography_env_objective_function(FullStateTensor(U),
                 FullEnvironment(environment_to_unitary(from_real_vector(v))))
         return r
 
@@ -43,7 +43,7 @@ def get_env(U, C0=randn(2, 2)+1j*randn(2, 2), sample=False, reps=100000):
         """s_obj: take an 8d real vector, use mat to turn it into a 4d complex vector, environment_to_unitary to 
            turn it into a unitary, then calculate the (sampled) objective function.
         """
-        r = sampled_env_objective_function(FullStateTensor(U), 
+        r = sampled_env_objective_function(FullStateTensor(U),
                 FullEnvironment(environment_to_unitary(from_real_vector(v))))
         return r
 
@@ -128,7 +128,7 @@ def trace_distance_cost_function(params, U):
 
     environment = FullStateTensor(U4(params))
     state = State(U, environment, 1)
-    
+
     state_qubits = state.num_qubits()
     env_qubits = environment.num_qubits()
 
@@ -138,10 +138,10 @@ def trace_distance_cost_function(params, U):
     target_qubits1 = list(range(state_qubits, state_qubits+aux_qubits))
     target_qubits2 = list(range(state_qubits, state_qubits+aux_qubits))
     target_qubits3 = list(range(env_qubits, env_qubits+aux_qubits))
-    
+
     total_qubits = (2 * state_qubits)
     qubits = cirq.LineQubit.range(total_qubits)
-    
+
     cnots1 = [cirq.CNOT(qubits[i], qubits[j]) for i, j in zip(control_qubits, target_qubits1)]
     cnots2 = [cirq.CNOT(qubits[i], qubits[j]) for i, j in zip(control_qubits, target_qubits2)]
     cnots3= [cirq.CNOT(qubits[i], qubits[j]) for i, j in zip(control_qubits, target_qubits3)]
@@ -159,7 +159,7 @@ def trace_distance_cost_function(params, U):
                                       environment(*qubits[env_qubits: 2*env_qubits])] + cnots3 +
                                       hadamards)
 
-    simulator = cirq.Simulator() 
+    simulator = cirq.Simulator()
     results1 = simulator.simulate(circuit1)
     results2 = simulator.simulate(circuit2)
     results3 = simulator.simulate(circuit3)
@@ -175,15 +175,15 @@ def trace_distance_cost_function(params, U):
     return np.abs(score)
 
 class TraceDistanceOptimizer(Optimizer):
-    
+
     def objective_function(self, params):
         return trace_distance_cost_function(params, self.u)
 
-    
-    
+
+
 ############################################
 # Cirq Gate Classes  #
-############################################ 
+############################################
 
 class Tensor(cirq.Gate):
     def __init__(self, unitary, symbol):
@@ -301,9 +301,9 @@ class ShallowCNOTStateTensor(cirq.Gate):
         return [[cirq.rz(β)(qubit) for qubit in qubits] + \
                 [cirq.rx(γ)(qubit) for qubit in qubits] + \
                 [cirq.H(qubits[0])]+\
-             list(reversed([cirq.CNOT(qubits[i], qubits[i + 1]) for i in range(self.n_qubits - 1)])) 
-                #+\
-#                 [cirq.SWAP(qubits[i], qubits[i+1 if i!= self.n_qubits-1 else 0]) for i in list(range(self.n_qubits))]
+             list(reversed([cirq.CNOT(qubits[i], qubits[i + 1]) for i in range(self.n_qubits - 1)]))
+        #+\
+        #                 [cirq.SWAP(qubits[i], qubits[i+1 if i!= self.n_qubits-1 else 0]) for i in list(range(self.n_qubits))]
                 for β, γ in split_2s(self.βγs)]
 
     def _circuit_diagram_info_(self, args):
@@ -345,9 +345,9 @@ class ShallowCNOTStateTensor3(cirq.Gate):
                 [cirq.rx(γ)(qubit) for qubit in qubits] + \
                 [cirq.rz(ω)(qubit) for qubit in qubits] + \
                 [cirq.H(qubits[0])]+\
-             list(reversed([cirq.CNOT(qubits[i], qubits[i + 1]) for i in range(self.n_qubits - 1)])) 
-                #+\
-#                 [cirq.SWAP(qubits[i], qubits[i+1 if i!= self.n_qubits-1 else 0]) for i in list(range(self.n_qubits))]
+             list(reversed([cirq.CNOT(qubits[i], qubits[i + 1]) for i in range(self.n_qubits - 1)]))
+        #+\
+        #                 [cirq.SWAP(qubits[i], qubits[i+1 if i!= self.n_qubits-1 else 0]) for i in list(range(self.n_qubits))]
                 for β, γ, ω in split_3s(self.βγs)]
 
     def _circuit_diagram_info_(self, args):
@@ -371,7 +371,7 @@ class ExactAfter4(cirq.Gate):
         return [[cirq.rz(a)(qubits[0]), cirq.rz(d)(qubits[1])] + \
                 [cirq.rx(b)(qubits[0]), cirq.rx(e)(qubits[1])] + \
                 [cirq.rz(c)(qubits[0]), cirq.rz(f)(qubits[1])] + \
-             list(reversed([cirq.CNOT(qubits[i], qubits[i + 1]) for i in range(self.n_qubits - 1)])) 
+             list(reversed([cirq.CNOT(qubits[i], qubits[i + 1]) for i in range(self.n_qubits - 1)]))
                 +\
                  [cirq.SWAP(qubits[i], qubits[i+1 if i!= self.n_qubits-1 else 0]) for i in list(range(self.n_qubits))]
                 for a, b, c, d, e, f in split_ns(self.βγs, 6)]
@@ -390,6 +390,11 @@ class ShallowFullStateTensor(cirq.Gate):
         return self.n_qubits
 
     def _decompose_(self, qubits):
+        '''
+        0: ──Rz(βγs[0])──Rx(βγs[1])──Rz(βγs[2])──@──Ry(βγs[6])──X──Ry(βγs[7])──@──Rz(βγs[9])───Rx(βγs[10])──Rz(βγs[11])──
+                                                 │              │              │
+        1: ──Rz(βγs[3])──Rx(βγs[4])──Rz(βγs[5])──X──────────────@──Rz(βγs[8])──X──Rz(βγs[12])──Rx(βγs[13])──Rz(βγs[14])──
+        '''
         return [cirq.rz(self.βγs[0])(qubits[0]), cirq.rx(self.βγs[1])(qubits[0]), cirq.rz(self.βγs[2])(qubits[0]),
                 cirq.rz(self.βγs[3])(qubits[1]), cirq.rx(self.βγs[4])(qubits[1]), cirq.rz(self.βγs[5])(qubits[1]),
                 cirq.CNOT(qubits[0], qubits[1]),
@@ -440,4 +445,3 @@ class ShallowEnvironment(cirq.Gate):
 
     def _circuit_diagram_info_(self, args):
         return ['V'] * self.n_qubits
-
