@@ -11,6 +11,13 @@ poetry install
 pip install -e .
 ```
 
+If your are going to run the script on Fujitsu's Slurm system, run the commands below instead.
+
+```
+poetry install --extras fujitsu-slurm
+pip install -e .
+```
+
 ## Prepare
 
 Copy `qmps/loschmidts/real_dev_submit/20230711/src/config.example.ini` to `qmps/loschmidts/real_dev_submit/20230711/src/config.ini` and put your IBM API token into `config.ini`. Get your IBM API token at the [IBM Quantum Account page](https://quantum-computing.ibm.com/account).
