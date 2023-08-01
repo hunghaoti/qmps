@@ -59,48 +59,37 @@ def Hermit_gate(par):
     return A_op
 
 
-def CX_tens():
-    cx_tens = np.zeros((4, 4))
-    cx_tens[0, 0] = 1.0
-    cx_tens[1, 3] = 1.0
-    cx_tens[2, 2] = 1.0
-    cx_tens[3, 1] = 1.0
-    cx_tens = cx_tens.reshape(2, 2, 2, 2)
-    return cx_tens
+def cnot_tensor():
+    return np.array([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+    ]).reshape(2, 2, 2, 2)
 
 
-def h_tens():  # hadamard
-    h_tens = np.zeros((2, 2))
-    h_tens[0, 0] = 1.0
-    h_tens[0, 1] = 1.0
-    h_tens[1, 0] = 1.0
-    h_tens[1, 1] = -1.0
-    h_tens = h_tens * pow(2, -0.5)
-    return h_tens
+def hadamard_tensor():
+    return 2**-0.5 * np.array([
+        [1.0, 1.0],
+        [1.0, -1.0],
+    ])
 
 
 def i_ten():
     n = 6
-    dim = pow(2, 6)
-    i_tens = np.zeros((dim, dim))
-    for i in range(0, dim):
-        i_tens[i, i] = 1.0
-    i_tens = i_tens.reshape(2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2)
-    i_tens = i_tens.astype(complex)
+    i_tens = np.identity(2**n, dtype=complex)
+    i_tens = i_tens.reshape(*[2] * 2 * n)
+    # i_tens = i_tens.astype(complex)
     return i_tens
 
 
 def Aop_sample(par_Aop, A, H, dt):
-    Aop = Hermit_gate(par_Aop)
+    hermitianized = Hermit_gate(par_Aop)
     A1 = expm(-1 * H.to_matrix() * 2 * dt)
-    A2 = np.zeros((4, 4))
-    A2[0, 0] = 1.0
-    A2[1, 1] = 1.0
-    A2[2, 2] = 1.0
-    A2[3, 3] = 1.0
+    A2 = np.identity(4, dtype=np.double)
 
-    eiA = expm(1j * Aop * 2 * dt)
-    e_iA = expm(-1j * Aop * 2 * dt)
+    eiA = expm(1j * hermitianized * 2 * dt)
+    e_iA = expm(-1j * hermitianized * 2 * dt)
     e_H = expm(-1 * H.to_matrix() * 2 * dt)
     Op = -eiA @ e_H - e_H @ e_iA
 
@@ -121,8 +110,8 @@ def Aop_sample(par_Aop, A, H, dt):
     tens_L = np.transpose(tens_L, (1, 0, 3, 2))
     tens_Up = target_u.data.reshape(2, 2, 2, 2)
     tens_Up = np.transpose(tens_Up, (1, 0, 3, 2))
-    tens_cx = CX_tens()
-    tens_h = h_tens()
+    tens_cx = cnot_tensor()
+    tens_h = hadamard_tensor()
 
     tmp = i_ten()
     dim = pow(2, 6)
@@ -180,8 +169,8 @@ def TN_Measure(par, par_prime, Op):
     tens_L = np.transpose(tens_L, (1, 0, 3, 2))
     tens_Up = target_u.data.reshape(2, 2, 2, 2)
     tens_Up = np.transpose(tens_Up, (1, 0, 3, 2))
-    tens_cx = CX_tens()
-    tens_h = h_tens()
+    tens_cx = cnot_tensor()
+    tens_h = hadamard_tensor()
 
     tmp = i_ten()
     dim = pow(2, 6)
@@ -282,7 +271,7 @@ def main(sampler=None):
                             f'params_tau{round(cnt*dt, 2)}')
 
     #np.random.randn(N)
-    termi_t = float(config['parameter']['terminate_time'])
+    terminate_time = float(config['parameter']['terminate_time'])
     tmp = unitary_to_tensor(cirq.unitary(gate(params)))
     A = iMPS([unitary_to_tensor(cirq.unitary(gate(params)))
              ]).left_canonicalise()
@@ -290,9 +279,9 @@ def main(sampler=None):
     ps = [15]
 
     for N in tqdm(ps):
-
-        T = np.linspace(0, termi_t - dt, int(termi_t / dt - 0.0001))
-        dt = T[1] - T[0]
+        evolution_times = np.linspace(0, terminate_time - dt,
+                                      int(terminate_time / dt - 0.0001))
+        dt = evolution_times[1] - evolution_times[0]
         print('dt', dt)
         U = gate(params)
 
@@ -308,16 +297,17 @@ def main(sampler=None):
         en_old = 100.0
         en = 100.0
 
-        for _ in tqdm(T):
+        for _ in tqdm(evolution_times):
             #save current stage
             with open(config_path, 'w') as configfile:
                 config.write(configfile)
 
             #U = param_unitary(params);
-            t = dt * cnt
-            t_str = str(round(t, 2))
-            with open(data_output_folder / 'params' / f'params_tau{t_str}',
-                      'w') as f_pars:
+            evolved_time = dt * cnt
+            evolved_time_string = str(round(evolved_time, 2))
+            with open(
+                    data_output_folder / 'params' /
+                    f'params_tau{evolved_time_string}', 'w') as f_pars:
                 np.savetxt(f_pars, params)
             U = gate(params)
             A_ = iMPS([unitary_to_tensor(cirq.unitary(U))]).left_canonicalise()
@@ -346,8 +336,9 @@ def main(sampler=None):
                             par_Aop, (A_[0], H0, dt),
                             options={'disp': True})
             par_Aop = resA.x
-            with open(data_output_folder / 'A_params' / f'params_tau{t_str}',
-                      'w') as f_A_pars:
+            with open(
+                    data_output_folder / 'A_params' /
+                    f'params_tau{evolved_time_string}', 'w') as f_A_pars:
                 np.savetxt(f_A_pars, par_Aop)
 
             #A error
