@@ -1,5 +1,3 @@
-from copy import deepcopy
-
 import matplotlib.pyplot as plt
 from mpi4py import MPI
 from qiskit_qulacs import QulacsProvider
@@ -19,8 +17,7 @@ result = qite_qiskit.main(sampler, f'rank{rank:02}')
 if rank == 0:
     all_results = [result]
     for i in range(1, mpisize):
-        all_results.append(deepcopy(result))
-        comm.Recv(all_results[i], i)
+        all_results.append(comm.recv(None, i))
     for xs, energies in all_results:
         plt.plot(xs, energies, '-')
     plt.title('energy in evolution')
@@ -28,6 +25,5 @@ if rank == 0:
     plt.xlabel('evolved time')
     plt.ylabel('energy')
     plt.savefig('all_energy.png')
-
 else:
-    comm.Send(result, 0)
+    comm.send(result, 0)
