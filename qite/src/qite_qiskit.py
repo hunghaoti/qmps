@@ -1,5 +1,5 @@
-from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, Aer, execute
-from qiskit.providers.aer import QasmSimulator, StatevectorSimulator, UnitarySimulator
+# from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, Aer, execute
+# from qiskit.providers.aer import QasmSimulator, StatevectorSimulator, UnitarySimulator
 from qiskit.quantum_info.operators import Operator
 import numpy as np
 import os
@@ -25,8 +25,17 @@ from scipy.optimize import minimize
 from scipy.linalg import expm
 from ncon import ncon
 from numpy import trace as tr
+import matplotlib.pyplot as plt
 
-#cost_func = time_evolve_cost_fun
+from klepto import no_cache
+from klepto.archives import dir_archive
+from klepto.keymaps import hashmap
+
+# The default keymap uses built-in hash function which is seeded by a random
+# number for each process.
+stable_keymap = hashmap(flat=True, algorithm='md5')
+
+# cost_func = time_evolve_cost_fun
 cost_func = time_evolve_measure_cost_fun
 
 
@@ -238,7 +247,7 @@ def obj_s(p_):
 
 
 ## main function
-def main(sampler=None):
+def main(sampler=None, cache_folder_name=''):
     base_folder = Path(__file__).parent
 
     config_path = base_folder / 'config.ini'
@@ -246,128 +255,136 @@ def main(sampler=None):
     config.read(config_path)
 
     data_base_folder = base_folder / config['path']['data_path']
-    previous_data_index = int(config['runtime_state']['data_index'])
-    data_input_folder = data_base_folder / f'data{previous_data_index}'
-    data_output_folder = data_base_folder / f'data{previous_data_index + 1}'
-    config['runtime_state']['data_index'] = str(previous_data_index + 1)
-    with open(config_path, 'w') as configfile:
-        config.write(configfile)
+    cache_folder = data_base_folder / cache_folder_name
 
-    os.makedirs(data_output_folder / 'params', exist_ok=True)
-    os.makedirs(data_output_folder / 'A_params', exist_ok=True)
+    dt = float(config['parameter']['dt'])
+    terminate_time = float(config['parameter']['terminate_time'])
 
     g0, g1 = 1.0, 0.2
-    D = 2  #virtual bond dimension
-    N = 15
     H0 = Hamiltonian({'ZZ': -1.0, 'X': g0})
-    #H1 = Hamiltonian({'ZZ':-1.0, 'X':g1})
-    np.random.seed(3)
-    dt = float(config['parameter']['dt'])
-    cnt = int(config['runtime_state']['loop_index'])
-    if cnt == 0:  # the first run
-        params = [1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.]
-    else:
-        params = np.loadtxt(data_input_folder / 'params' /
-                            f'params_tau{round(cnt*dt, 2)}')
+    H0_mat = H0.to_matrix()
+    HH_mat = H0_mat @ H0_mat
+    pauli_xyz = paulis(0.5)
+    evs = []
+    les = []
 
-    #np.random.randn(N)
-    terminate_time = float(config['parameter']['terminate_time'])
-    tmp = unitary_to_tensor(cirq.unitary(gate(params)))
-    A = iMPS([unitary_to_tensor(cirq.unitary(gate(params)))
-             ]).left_canonicalise()
-    print('energy:', A.energy([H0.to_matrix()]))
-    ps = [15]
+    @no_cache(cache=dir_archive(name=cache_folder),
+              keymap=stable_keymap,
+              ignore=('params', 'A_elements'))
+    def evolve(end_time: float,
+               step: float,
+               step_count: int,
+               params: np.ndarray[np.float64] = None,
+               A_elements: np.ndarray[np.float64] = None):
+        '''
+        Args:
+            step_count: the number of steps passed
+        '''
+        if step_count == 0:
+            return {
+                'params': np.ones(15),
+                'A_elements': np.random.randn(16),
+            }
+        if params is None or A_elements is None:
+            raise ValueError('params and A_elements should not be None')
 
-    for N in tqdm(ps):
-        evolution_times = np.linspace(0, terminate_time - dt,
-                                      int(terminate_time / dt - 0.0001))
-        dt = evolution_times[1] - evolution_times[0]
-        print('dt', dt)
         U = gate(params)
+        A_ = iMPS([unitary_to_tensor(cirq.unitary(U))]).left_canonicalise()
 
-        #WW = expm(-1j*H1.to_matrix()*2*dt)
-        ps = [params]
-        ops = paulis(0.5)
-        evs = []
-        les = []
-        np.random.seed(0)
-        par_Aop = np.random.randn(16)
+        # Calculate energy, entropy and variance of energy
+        energy = A_.energy([H0_mat])
+        ee = A_.energy([HH_mat])
+        # entropy = A_.entropy()
+        variance = ee - energy * energy
 
-        #errs = [res.fun]
-        en_old = 100.0
-        en = 100.0
+        # Fit A operator
+        # evs.append(A_.Es(pauli_xyz))
+        # les.append(A_.overlap(A))  # get overlap with previous A?
+        resA = minimize(Aop_cost_func,
+                        A_elements, (A_[0], H0, step),
+                        options={'disp': True})
+        A_elements = resA.x
 
-        for _ in tqdm(evolution_times):
-            #save current stage
-            with open(config_path, 'w') as configfile:
-                config.write(configfile)
+        # error of A operator
+        e_H = expm(-1 * H0_mat * 4.0 * step)
+        Norm = TN_Measure(params, params, e_H)
+        A_err = 2.0 + (1.0 / np.sqrt(Norm)) * Aop_cost_func(
+            A_elements, A_[0], H0, step)
 
-            #U = param_unitary(params);
-            evolved_time = dt * cnt
-            evolved_time_string = str(round(evolved_time, 2))
-            with open(
-                    data_output_folder / 'params' /
-                    f'params_tau{evolved_time_string}', 'w') as f_pars:
-                np.savetxt(f_pars, params)
-            U = gate(params)
-            A_ = iMPS([unitary_to_tensor(cirq.unitary(U))]).left_canonicalise()
-            en_old = en
-            H0_mat = H0.to_matrix()
-            HH_mat = H0_mat @ H0_mat
-            en = A_.energy([H0_mat])
-            ee = A_.energy([HH_mat])
-            # s = A_.entropy()
-            var = ee - en * en
-            print('var', var)
+        # A operates on circuit
+        A_operator = Hermit_gate(A_elements)
+        e_iA = expm(-1j * A_operator * 2 * step)
+        res = minimize(cost_func,
+                       params, (A_[0], e_iA, sampler),
+                       method='COBYLA',
+                       options={
+                           'disp': True,
+                           'tol': 1.0e-3,
+                           'catol': 1.0e-3
+                       })
+        params = res.x
 
-            print(' energy', en)
-            # print(' entropy', s)
+        #params = grad_descent(params, A_[0], WW, 0.1, 10000)
+        #errs.append(res.fun)
+        return {
+            'energy': energy,
+            'variance': variance,
+            'params': params,
+            'A_elements': A_elements,
+            'A_error': A_err,
+        }
 
-            with (open(data_output_folder / 'es.txt',
-                       'a') as f_e, open(data_output_folder / 's.txt', 'a') as
-                  f_s, open(data_output_folder / 'var.txt', 'a') as f_var):
-                f_e.write(f'{en}\n')
-                # f_s.write(f'{s}\n')
-                f_var.write(f'{var}\n')
+    @no_cache(cache=dir_archive(name=cache_folder),
+              keymap=stable_keymap,
+              ignore=('params', 'A_elements'))
+    def get_energies(
+        end_time: float,
+        step: float,
+    ):
+        bound_dimension = 2  #virtual bond dimension
+        N = 15
+        #H1 = Hamiltonian({'ZZ':-1.0, 'X':g1})
+        A = iMPS([unitary_to_tensor(cirq.unitary(gate([1.] * 15)))
+                 ]).left_canonicalise()
 
-            evs.append(A_.Es(ops))
-            les.append(A_.overlap(A))
-            resA = minimize(Aop_cost_func,
-                            par_Aop, (A_[0], H0, dt),
-                            options={'disp': True})
-            par_Aop = resA.x
-            with open(
-                    data_output_folder / 'A_params' /
-                    f'params_tau{evolved_time_string}', 'w') as f_A_pars:
-                np.savetxt(f_A_pars, par_Aop)
+        # print('energy:', A.energy([H0.to_matrix()]))
+        something = [15]
 
-            #A error
-            e_H = expm(-1 * H0_mat * 4.0 * dt)
-            Norm = TN_Measure(params, params, e_H)
-            A_err = 2.0 + (1.0 / np.sqrt(Norm)) * Aop_cost_func(
-                par_Aop, A_[0], H0, dt)
+        for N in tqdm(something):
+            #WW = expm(-1j*H1.to_matrix()*2*dt)
 
-            with open(data_output_folder / 'A_err.txt', 'w') as f_Aerr:
-                f_Aerr.write(f'{A_err}\n')
+            # XXX: Why to seed the random number generator with a constant here?
+            np.random.seed(0)
 
-            #A operate on circuit
-            Aop = Hermit_gate(par_Aop)
-            e_iA = expm(-1j * Aop * 2 * dt)
-            res = minimize(cost_func,
-                           params, (A_[0], e_iA, sampler),
-                           method='COBYLA',
-                           options={
-                               'disp': True,
-                               'tol': 1.0e-3,
-                               'catol': 1.0e-3
-                           })
-            params = res.x
+            params = None
+            A_elements = None
+            energies = []
+            for step_count in tqdm(range(int(np.ceil(end_time / step)) + 1)):
+                result = evolve(end_time,
+                                step,
+                                step_count,
+                                params=params,
+                                A_elements=A_elements)
+                params = result['params']
+                A_elements = result['A_elements']
+                if 'energy' in result:
+                    energies.append(result['energy'])
 
-            #params = grad_descent(params, A_[0], WW, 0.1, 10000)
-            #errs.append(res.fun)
-            ps.append(params)
-            cnt = cnt + 1
-            config['runtime_state']['loop_index'] = str(cnt)
+            xs = np.arange(0, step * len(energies), step) + step
+            plt.plot(xs,
+                     energies,
+                     '-',
+                     linewidth=3.0,
+                     color='orange',
+                     label='energy')
+            plt.title('energy in evolution')
+            plt.legend(loc='upper right')
+            plt.xlabel('evolved time')
+            plt.ylabel('energy')
+            plt.savefig(cache_folder / 'energy.png')
+            return [xs, energies]
+
+    return get_energies(terminate_time, dt)
 
 
 if __name__ == '__main__':
